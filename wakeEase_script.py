@@ -8,8 +8,8 @@ mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
 db = mongo_client["WakeEase"]
 
 # MQTT configuration
-mqtt_broker_address = "yourExternalIP" # Replace with your VM instance external IP address
-mqtt_topics = [("notification", 0), ("duration", 0), ("response_time", 0)]  # List of topics to subscribe to
+mqtt_broker_address = "34.27.101.158" # Replace with your VM instance external IP address
+mqtt_topics = [("notification", 0), ("led_duration", 0), ("fan_duration", 0), ("sleep_duration", 0), ("response_time", 0)]  # List of topics to subscribe to
 
 # Define your local timezone
 local_timezone = pytz.timezone("Asia/Kuala_Lumpur")  # Replace with your local timezone
@@ -39,7 +39,7 @@ def on_message(client, userdata, message):
     collection = db[topic]
 
     # Process data differently based on the topic
-    if topic == "duration" or topic == "response_time":
+    if topic in ["led_duration", "fan_duration", "sleep_duration", "response_time"]:
         try:
             # Extract timing from the payload (e.g., "Button pressed after 8.56 seconds.")
             timing = float(payload.split(" ")[-2])  # Extracts the numeric value before "seconds."
