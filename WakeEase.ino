@@ -4,11 +4,11 @@
 #include <ESP32Servo.h>
 
 // Wi-Fi Credentials
-const char* ssid = "yourwifi";  // Replace with your Wi-Fi SSID
-const char* password = "yourwifipassword";    // Replace with your Wi-Fi password
+const char* ssid = "MalaysiaMadani";  // Replace with your Wi-Fi SSID
+const char* password = "m0m0n0n0";    // Replace with your Wi-Fi password
 
 // MQTT Credentials
-const char* MQTT_SERVER = "yourExternalIP"; // Replace with your VM External IP
+const char* MQTT_SERVER = "34.27.101.158"; // Replace with your VM External IP
 const int MQTT_PORT = 1883;               // Non-TLS communication port
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -17,7 +17,8 @@ PubSubClient client(espClient);
   GPIO pin assignments for IR sensor, 
   button, relay, LED and servo motor
 */
-#define IR_PIN 22
+#define IR_PIN_1 21
+#define IR_PIN_2 22
 #define BUTTON_PIN 23
 #define RELAY_PIN 26
 #define LED_PIN 27
@@ -34,12 +35,23 @@ int alarmHour;
 int alarmMinute;
 
 /*
-  Variables for tracking Fan-LED duration: 
+  Variables for tracking Fan and LED duration: 
   previous state, start time, and ON duration
 */
 bool lastLEDState = false;
+bool lastFanState = false;
 unsigned long ledStartTime = 0;
+unsigned long fanStartTime = 0;
 unsigned long ledDuration = 0;
+unsigned long fanDuration = 0;
+
+/* 
+  Variables for tracking sleep time using
+  the previous state of irBedState sensor
+*/
+unsigned long sleepStartTime = 0;
+unsigned long sleepDuration = 0;
+bool lastBedState = false;
 
 /*
   Variables for handling alarm routine including 
@@ -79,7 +91,8 @@ void setup() {
   // Set pin modes
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
-  pinMode(IR_PIN, INPUT_PULLUP);
+  pinMode(IR_PIN_1, INPUT_PULLUP);
+  pinMode(IR_PIN_2, INPUT_PULLUP);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   /* 
@@ -92,10 +105,13 @@ void setup() {
   Myservo.write(0);
 
   Serial.println("WakeEase: Smart Bedroom Automation Initialized...");
-  setAlarmTime(); // Prompt user to set the alarm time during setup
+  Serial.println("Use SETALARM hh:mm to set the alarm time.");
 }
 
 void loop() {
+  // Check for new command for SETALARM hh:mm from the Serial Monitor
+  setAlarmTime();
+
   struct tm timeInfo;
 
   // Get the current time
@@ -112,29 +128,73 @@ void loop() {
 
   client.loop(); // Handle MQTT messages
 
-  // Read the states of the button, IR sensor, and current LED status
+  // Read the states of the button and current LED and Fan status
   int buttonState = !digitalRead(BUTTON_PIN);
-  int irVal = isSensorActive ? !digitalRead(IR_PIN) : 0;
   bool currentLEDState = digitalRead(LED_PIN);
+  bool currentFanState = digitalRead(RELAY_PIN);
+
+  // Read the states of the main and bed IR sensors
+  int irMainState = isSensorActive ? !digitalRead(IR_PIN_1) : 0;
+  int irBedState = isSensorActive ? !digitalRead(IR_PIN_2) : 0; 
 
   // Log LED state transitions
   if (currentLEDState && !lastLEDState && !isAlarmActive) {
     ledStartTime = millis(); // Record LED ON time
     getFormattedTime(timeStr);
-    sprintf(msg, "[%s] Fan-LED turned ON", timeStr);
+    sprintf(msg, "[%s] LED turned ON", timeStr);
     client.publish("notification", msg);
     Serial.println(msg);
   } else if (!currentLEDState && lastLEDState) {
     getFormattedTime(timeStr);
-    sprintf(msg, "[%s] Fan-LED turned OFF", timeStr);
+    sprintf(msg, "[%s] LED turned OFF", timeStr);
     client.publish("notification", msg);
     Serial.println(msg);
     ledDuration = millis() - ledStartTime; // Calculate LED ON duration
-    sprintf(msg, "[%s] Fan-LED ON duration: %.2f seconds.", timeStr, ledDuration / 1000.0);
-    client.publish("duration", msg);
+    sprintf(msg, "[%s] LED ON duration: %.2f seconds.", timeStr, ledDuration / 1000.0);
+    client.publish("led_duration", msg);
     Serial.println(msg);
   }
   lastLEDState = currentLEDState; // Update last LED state
+
+  // Log Fan state transitions
+  if (currentFanState && !lastFanState && !isAlarmActive) {
+    fanStartTime = millis(); // Record fan ON time
+    getFormattedTime(timeStr);
+    sprintf(msg, "[%s] Fan turned ON", timeStr);
+    client.publish("notification", msg);
+    Serial.println(msg);
+  } else if (!currentFanState && lastFanState) {
+    getFormattedTime(timeStr);
+    sprintf(msg, "[%s] Fan turned OFF", timeStr);
+    client.publish("notification", msg);
+    Serial.println(msg);
+    fanDuration = millis() - fanStartTime; // Calculate fan ON duration
+    sprintf(msg, "[%s] Fan ON duration: %.2f seconds.", timeStr, fanDuration / 1000.0);
+    client.publish("fan_duration", msg);
+    Serial.println(msg);
+  }
+  lastFanState = currentFanState; // Update last LED state
+
+  // Log Sleeping Activity based on irBedState sensor
+  if (irBedState && !lastBedState && !isAlarmActive) {
+    sleepStartTime = millis(); // Record sleeping start time
+    getFormattedTime(timeStr);
+    sprintf(msg, "[%s] Sleeping session started.", timeStr);
+    client.publish("notification", msg);
+    Serial.println(msg);
+  } else if (!irBedState && lastBedState) {
+    // Bed state changed to "awake"
+    delay(2000);
+    sleepDuration = millis() - sleepStartTime; // Calculate sleeping duration
+    getFormattedTime(timeStr);
+    sprintf(msg, "[%s] Sleeping session ended.", timeStr);
+    client.publish("notification", msg);
+    Serial.println(msg);
+    sprintf(msg, "[%s] Sleeping duration: %.2f seconds.", timeStr, sleepDuration / 1000.0);
+    client.publish("sleep_duration", msg);
+    Serial.println(msg);
+  }
+  lastBedState = irBedState; // Update lastBedState
 
   /*
     Alarm routine: Trigger the alarm at the set time 
@@ -152,17 +212,22 @@ void loop() {
   /* 
     Manage alarm mode and non-alarm modes
     1. alarm mode: handle active alarm routines 
-    2. non-alarm mode: control Fan-LED based on presence detection
+    2. non-alarm mode: control Fan and LED based on presence detection
   */
   if (isAlarmActive) {
     handleAlarmRoutine(buttonState);
   } 
-  // Presence detected: Turn ON Fan-LED
-  else if (irVal) {
+  // Presence detected by IR sensor at main area: Turn ON Fan and LED
+  else if (irMainState) {
     digitalWrite(RELAY_PIN, HIGH);
     digitalWrite(LED_PIN, HIGH);
   } 
-  // No presence detected: Turn OFF Fan-LED after a delay
+  // Presence detected by IR sensor near bed: Turn ON Fan and Turn OFF LED
+  else if (irBedState){
+    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(LED_PIN, LOW);
+  }
+  // No presence detected: Turn OFF Fan and LED after a delay
   else {
     delay(2000);
     digitalWrite(RELAY_PIN, LOW);
@@ -172,52 +237,47 @@ void loop() {
 
 // Prompts user to set the alarm time through serial input
 void setAlarmTime() {
-  int tempHour = -1;
-  int tempMinute = -1;
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n'); // Read input until a newline
+    input.trim(); // Remove any extra spaces or newline characters
 
-  // Prompt for hour
-  while (tempHour < 0 || tempHour > 23) {
-    Serial.println("Enter the hour (0-23):");
-    while (Serial.available() == 0) {
-      // Wait for user input
-    }
-    tempHour = Serial.parseInt();
-    while (Serial.available() > 0) {
-      Serial.read(); // Clear the input buffer
-    }
-    if (tempHour < 0 || tempHour > 23) {
-      Serial.println("Invalid hour. Please enter a value between 0 and 23.");
+    if (input.startsWith("SETALARM")) {
+      // Extract hour and minute from the command
+      int separatorIndex = input.indexOf(' ');
+      if (separatorIndex != -1) {
+        String timePart = input.substring(separatorIndex + 1); // Get the "hh:mm" part
+        int colonIndex = timePart.indexOf(':');
+        if (colonIndex != -1) {
+          int tempHour = timePart.substring(0, colonIndex).toInt();
+          int tempMinute = timePart.substring(colonIndex + 1).toInt();
+
+          // Validate the hour and minute
+          if (tempHour >= 0 && tempHour <= 23 && tempMinute >= 0 && tempMinute <= 59) {
+            alarmHour = tempHour;
+            alarmMinute = tempMinute;
+            sprintf(msg, "Alarm time set to %02d:%02dH", alarmHour, alarmMinute);
+            client.publish("notification", msg);
+            Serial.println(msg);
+          } else {
+            Serial.println("Invalid time format. Please enter a valid time (hh:mm).");
+          }
+        } else {
+          Serial.println("Invalid format. Use SETALARM hh:mm");
+        }
+      } else {
+        Serial.println("Invalid command. Use SETALARM hh:mm");
+      }
+    } else {
+      Serial.println("Unknown command. Use SETALARM hh:mm to set the alarm.");
     }
   }
-
-  // Prompt for minute
-  while (tempMinute < 0 || tempMinute > 59) {
-    Serial.println("Enter the minute (0-59):");
-    while (Serial.available() == 0) {
-      // Wait for user input
-    }
-    tempMinute = Serial.parseInt();
-    while (Serial.available() > 0) {
-      Serial.read(); // Clear the input buffer
-    }
-    if (tempMinute < 0 || tempMinute > 59) {
-      Serial.println("Invalid minute. Please enter a value between 0 and 59.");
-    }
-  }
-
-  // Set alarm time
-  alarmHour = tempHour;
-  alarmMinute = tempMinute;
-  sprintf(msg, "Alarm time set to %02d%02dH", alarmHour, alarmMinute);
-  client.publish("notification", msg);
-  Serial.println(msg);
 }
 
 // Trigger the alarm
 void triggerAlarm() {
   isAlarmActive = true;
   isFanOffDueToTimeout = false;
-  isSensorActive = false; // Disable IR sensor during alarm
+  isSensorActive = false; // Disable IR sensors during alarm
   ledStartTime = millis(); // Record alarm start time
   digitalWrite(LED_PIN, HIGH); // Turn ON LED
   getFormattedTime(timeStr);
@@ -243,7 +303,7 @@ void handleAlarmRoutine(int buttonState) {
     if (digitalRead(RELAY_PIN) == HIGH) { // Check if the fan is ON
       digitalWrite(RELAY_PIN, LOW);  // Turn OFF fan
       getFormattedTime(timeStr);
-      sprintf(msg, "[%s] Button not pressed after snooze time: Fan OFF", timeStr);
+      sprintf(msg, "[%s] Button not pressed after snooze time.", timeStr);
       client.publish("notification", msg);
       Serial.println(msg);
     }
@@ -265,24 +325,15 @@ void handleAlarmRoutine(int buttonState) {
 // Stop the alarm
 void stopAlarm() {
   isAlarmActive = false;
-  isSensorActive = true; // Re-enable IR sensor
   Myservo.write(0); // Reset servo motor
   digitalWrite(RELAY_PIN, HIGH); // Turn ON fan
   getFormattedTime(timeStr);
   sprintf(msg, "[%s] Alarm stopped: Fan ON.", timeStr);
   client.publish("notification", msg);
 
-  // Keep fan ON for 5 seconds before checking IR sensor
+  // Keep fan ON for 5 seconds before checking IR sensors
   delay(5000);
-
-  // Check IR sensor after the delay
-  int irVal = !digitalRead(IR_PIN);
-  if (!irVal) {
-    digitalWrite(RELAY_PIN, LOW); // Turn OFF fan if no presence detected
-  } else {
-    sprintf(msg, "[%s] Presence detected: Fan-LED remain ON.", timeStr);
-    client.publish("notification", msg);
-  }
+  isSensorActive = true; // Re-enable IR sensors
 }
 
 // Reconnect to MQTT server
