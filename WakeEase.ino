@@ -183,8 +183,6 @@ void loop() {
     client.publish("notification", msg);
     Serial.println(msg);
   } else if (!irBedState && lastBedState) {
-    // Bed state changed to "awake"
-    delay(2000);
     sleepDuration = millis() - sleepStartTime; // Calculate sleeping duration
     getFormattedTime(timeStr);
     sprintf(msg, "[%s] Sleeping session ended.", timeStr);
