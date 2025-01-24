@@ -8,7 +8,7 @@ mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
 db = mongo_client["WakeEase"]
 
 # MQTT configuration
-mqtt_broker_address = "34.27.101.158" # Replace with your VM instance external IP address
+mqtt_broker_address = "yourexternalIP" # Replace with your VM instance external IP address
 mqtt_topics = [("notification", 0), ("led_duration", 0), ("fan_duration", 0), ("sleep_duration", 0), ("response_time", 0)]  # List of topics to subscribe to
 
 # Define your local timezone

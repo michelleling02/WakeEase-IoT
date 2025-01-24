@@ -4,11 +4,11 @@
 #include <ESP32Servo.h>
 
 // Wi-Fi Credentials
-const char* ssid = "MalaysiaMadani";  // Replace with your Wi-Fi SSID
-const char* password = "m0m0n0n0";    // Replace with your Wi-Fi password
+const char* ssid = "yourwifiname";  // Replace with your Wi-Fi SSID
+const char* password = "yourwifipassword";    // Replace with your Wi-Fi password
 
 // MQTT Credentials
-const char* MQTT_SERVER = "34.27.101.158"; // Replace with your VM External IP
+const char* MQTT_SERVER = "yourexternalIP"; // Replace with your VM External IP
 const int MQTT_PORT = 1883;               // Non-TLS communication port
 WiFiClient espClient;
 PubSubClient client(espClient);
