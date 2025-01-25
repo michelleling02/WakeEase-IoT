@@ -70,4 +70,5 @@
 - **3. [Setting Up MongoDB and MongoDB Charts.pdf](https://github.com/michelleling02/WakeEase-IoT/blob/main/%5B3%5D%20Setting%20Up%20MongoDB%20and%20MongoDB%20Charts.pdf)**: MongoDB installation and configuration guide.
 - **4. [Setting Up MQTT Server and MQTT-MongoDB Connection.pdf](https://github.com/michelleling02/WakeEase-IoT/blob/main/%5B4%5D%20Setting%20Up%20MQTT%20Server%20and%20MQTT-MongoDB%20Connection.pdf)**: Guide for MQTT and MongoDB integration.
 - **5. [Setting Up Dashboard in MongoDB Charts.pdf](https://github.com/michelleling02/WakeEase-IoT/blob/main/%5B5%5D%20Setting%20Up%20Dashboard%20in%20MongoDB%20Charts.pdf)**: Steps to create and visualize dashboards in MongoDB Charts.
+
 Note: Please follow the sequence of these files to ensure the system is configured and set up correctly. Each step builds on the previous one, so skipping or rearranging may result in errors during setup.
